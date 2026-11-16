@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
+import android.provider.MediaStore.Files.FileColumns as F
 import android.util.Size
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -54,7 +55,6 @@ fun fmt(b: Long): String = when {
 }
 
 fun loadMedia(cr: ContentResolver): List<Media> {
-    val F = MediaStore.Files.FileColumns
     val out = ArrayList<Media>()
     val proj = arrayOf(F._ID, F.DISPLAY_NAME, F.SIZE, F.DATE_TAKEN, F.DATE_ADDED, F.MEDIA_TYPE)
     val where = "${F.MEDIA_TYPE}=? OR ${F.MEDIA_TYPE}=?"
