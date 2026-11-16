@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.ContentResolver
 import android.content.ContentUris
+import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
@@ -32,6 +33,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -81,6 +83,7 @@ fun App() {
     var sel by remember { mutableStateOf(setOf<Long>()) }
     var sort by remember { mutableStateOf(0) }
     var filter by remember { mutableStateOf(0) }
+    var preview by remember { mutableStateOf<Media?>(null) }
 
     fun reload() { items = loadMedia(ctx.contentResolver) }
 
@@ -149,7 +152,7 @@ fun App() {
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Thumb(r)
+                        Thumb(r) { preview = r }
                         Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                             Text(r.name, maxLines = 1)
                             Text("${dayFmt.format(Date(r.date))} • ${fmt(r.size)}", style = MaterialTheme.typography.bodySmall)
@@ -171,18 +174,55 @@ fun App() {
             ) { Text("Hapus ${sel.size} file (${fmt(selSize)})") }
         }
     }
+    preview?.let { m ->
+        PreviewDialog(m, m.id in sel,
+            onToggle = { sel = if (m.id in sel) sel - m.id else sel + m.id },
+            onClose = { preview = null })
+    }
 }
 
 @Composable
-fun Thumb(m: Media) {
+fun Thumb(m: Media, onClick: () -> Unit) {
     val ctx = LocalContext.current
     val bmp by produceState<Bitmap?>(null, m.id) {
         value = withContext(Dispatchers.IO) {
             runCatching { ctx.contentResolver.loadThumbnail(m.uri, Size(160, 160), null) }.getOrNull()
         }
     }
-    Box(Modifier.size(56.dp).clip(MaterialTheme.shapes.small).background(Color.LightGray)) {
+    Box(Modifier.size(64.dp).clip(MaterialTheme.shapes.small).background(Color.LightGray).clickable(onClick = onClick)) {
         bmp?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
         if (m.video) Text("▶", Modifier.align(Alignment.Center), color = Color.White)
+    }
+}
+
+@Composable
+fun PreviewDialog(m: Media, selected: Boolean, onToggle: () -> Unit, onClose: () -> Unit) {
+    val ctx = LocalContext.current
+    val bmp by produceState<Bitmap?>(null, m.id) {
+        value = withContext(Dispatchers.IO) {
+            runCatching { ctx.contentResolver.loadThumbnail(m.uri, Size(1200, 1200), null) }.getOrNull()
+        }
+    }
+    Dialog(onDismissRequest = onClose) {
+        Surface(shape = MaterialTheme.shapes.large) {
+            Column(Modifier.padding(12.dp)) {
+                Box(Modifier.fillMaxWidth().heightIn(min = 200.dp, max = 480.dp), contentAlignment = Alignment.Center) {
+                    val b = bmp
+                    if (b != null) Image(b.asImageBitmap(), null, Modifier.fillMaxWidth(), contentScale = ContentScale.Fit)
+                    else CircularProgressIndicator()
+                }
+                Text(m.name, Modifier.padding(top = 8.dp), maxLines = 1)
+                Text(fmt(m.size), style = MaterialTheme.typography.bodySmall)
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        ctx.startActivity(Intent(Intent.ACTION_VIEW)
+                            .setDataAndType(m.uri, if (m.video) "video/*" else "image/*")
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                    }) { Text(if (m.video) "Putar" else "Buka") }
+                    OutlinedButton(onClick = onToggle) { Text(if (selected) "Batal pilih" else "Pilih") }
+                    TextButton(onClick = onClose) { Text("Tutup") }
+                }
+            }
+        }
     }
 }
