@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -41,12 +42,18 @@ import java.util.Date
 import java.util.Locale
 
 data class Media(val id: Long, val uri: Uri, val name: String, val size: Long, val date: Long, val video: Boolean)
-data class Header(val label: String, val ids: List<Long>, val size: Long)
+data class Header(val label: String, val ids: List<Long>, val size: Long, val day: Boolean = false)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { MaterialTheme { Surface(Modifier.fillMaxSize()) { App() } } }
+        setContent {
+            val dark = isSystemInDarkTheme()
+            val scheme = if (Build.VERSION.SDK_INT >= 31) {
+                if (dark) dynamicDarkColorScheme(this@MainActivity) else dynamicLightColorScheme(this@MainActivity)
+            } else if (dark) darkColorScheme() else lightColorScheme()
+            MaterialTheme(colorScheme = scheme) { Surface(Modifier.fillMaxSize()) { App() } }
+        }
     }
 }
 
@@ -83,6 +90,7 @@ fun App() {
     var sel by remember { mutableStateOf(setOf<Long>()) }
     var sort by remember { mutableStateOf(0) }
     var filter by remember { mutableStateOf(0) }
+    var group by remember { mutableStateOf(0) }
     var preview by remember { mutableStateOf<Media?>(null) }
 
     fun reload() { items = loadMedia(ctx.contentResolver) }
@@ -108,11 +116,17 @@ fun App() {
         else -> shown.sortedByDescending { it.size }
     }
     val monthFmt = remember { SimpleDateFormat("MMMM yyyy", Locale("id")) }
+    val dayHdrFmt = remember { SimpleDateFormat("EEEE, d MMMM yyyy", Locale("id")) }
     val dayFmt = remember { SimpleDateFormat("d MMM yyyy, HH:mm", Locale("id")) }
-    val rows: List<Any> = if (sort == 2) sorted else
-        sorted.groupBy { monthFmt.format(Date(it.date)) }.flatMap { (k, v) ->
-            listOf<Any>(Header(k, v.map { it.id }, v.sumOf { it.size })) + v
+    val rows: List<Any> = when {
+        sort == 2 -> sorted
+        group == 0 -> sorted.groupBy { dayHdrFmt.format(Date(it.date)) }.flatMap { (k, v) ->
+            listOf<Any>(Header(k, v.map { it.id }, v.sumOf { it.size }, true)) + v
         }
+        else -> sorted.groupBy { monthFmt.format(Date(it.date)) }.flatMap { (k, v) ->
+            listOf<Any>(Header(k, v.map { it.id }, v.sumOf { it.size }, false)) + v
+        }
+    }
     val selSize = items.filter { it.id in sel }.sumOf { it.size }
 
     Column(Modifier.fillMaxSize().systemBarsPadding()) {
@@ -128,6 +142,11 @@ fun App() {
                     FilterChip(filter == i, { filter = i }, { Text(t) })
                 }
             }
+            if (sort != 2) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("Per tanggal", "Per bulan").forEachIndexed { i, t ->
+                    FilterChip(group == i, { group = i }, { Text(t) })
+                }
+            }
         }
         if (!granted) Text("Izinkan akses foto & video agar daftar muncul.", Modifier.padding(12.dp))
         LazyColumn(Modifier.weight(1f)) {
@@ -137,12 +156,12 @@ fun App() {
                     Row(
                         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.secondaryContainer)
                             .clickable { sel = if (all) sel - r.ids.toSet() else sel + r.ids }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(r.label, style = MaterialTheme.typography.titleSmall)
-                            Text("${r.ids.size} file • ${fmt(r.size)} • ketuk untuk pilih semua", style = MaterialTheme.typography.bodySmall)
+                            Text("${r.ids.size} file • ${fmt(r.size)} • ketuk untuk pilih ${if (r.day) "sehari" else "sebulan"}", style = MaterialTheme.typography.bodySmall)
                         }
                         Checkbox(all, null)
                     }
